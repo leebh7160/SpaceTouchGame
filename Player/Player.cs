@@ -1,349 +1,654 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UIElements;
 
-class PlayerStatus
-{
-    public float speed;
-    public int boost;
-}
 
 public class Player : MonoBehaviour
 {
-    //========================ÇÃ·¹ÀÌ¾î ½ºÅ×ÀÌÅÍ½º(µû·Î Å¬·¡½º·Î »©±â)
-    PlayerStatus playerStatus;
-    //========================ÇÃ·¹ÀÌ¾î ¹°¸®(µû·Î Å¬·¡½º·Î »©±â)
-    PlayerPhysics playerPhysics;
-    Transform playerRotateObj;
+    //====================ì°¸ì¡°
+    private PlayerAttach playerAttach;
+    private PlayerSound playerSound;
+    private ItemFactory itemFactory;
 
-    //========================ÇÃ·¹ÀÌ¾î UI
-    [SerializeField] Transform moveLaser;
-    //========================¾ÆÀÌÅÛ
-    ItemFactory itemFactory;
-    //========================ÇÃ·¹ÀÌ¾î°¡ º®¿¡ ´ê¾ÒÀ» ¶§
-    private bool isMove = false;
-    private bool isWall = false;
-    private Transform TouchedWall;
-    //========================¹°¸® °è»ê
-    private float currentRadius = 0;
-    private Transform rotateObject;
+    private Explodable _explodable;
 
-    //========================»ç¿îµå °ü·Ã
-    AudioSource moveSound;
+    //====================í”Œë ˆì´ì–´ ì¡°ì‘
+    private Transform moveLaser;
+    private Transform bulletObject;
+    private AudioSource audioSource;
+    private int shootTime;
+    private List<Bullet> Bullet;
+    private int bulltcount = 0;
+    [SerializeField] private float bulletDelay = 0.3f;
+    private float bulletwaitTime = 1;
 
+    //====================ë ˆì´ì €
+    private SpriteRenderer detactAria;
+    private Stuff_Aria stuff_aria;
+    private GameObject laserAria;
+    private PlayerLaser playerLaser;
+
+    [Header("ì‚¬ê²© ìœ„ì¹˜")]
+    [SerializeField] Transform shootLocation;
+
+
+    //===================ë³€ìˆ˜
+    [SerializeField] private AudioClip boostClip;
+    [SerializeField] private AudioClip shootClip;
+    [SerializeField] private AudioClip bombClip;
+
+    [SerializeField] private bool isMove        = false;
+    [SerializeField] private float movespeed    = 40f;
+    private bool isWall                         = true;
+    private bool isShoot                        = true;
+    private bool isGameStart                    = false;
+    
+    private string wallTag;
+    private KeyCode boostKey;
+    private KeyCode shootKey;
+
+    private Vector2 limitX = new Vector2(500, -500);
+    private Vector2 limitY = new Vector2(500, -500);
+
+    //===================ì¡°ì‘ ë³€ìˆ˜
     private Vector2 playerRotate;
 
-    private void Start()
+    //====================ìºë¦­í„° ì´í™íŠ¸
+    private Animator animator;
+    private GameObject playerObj;
+
+    //===================ì¹´ë©”ë¼ ì´ë²¤íŠ¸ í•¨ìˆ˜
+    private bool isOutOfCamera = false;
+
+    void Start()
     {
-        playerPhysics = new PlayerPhysics();
-        playerStatus = new PlayerStatus();
-        itemFactory = new ItemFactory();
-        playerRotate = new Vector2();
-
-        playerRotateObj = this.transform.Find("RotateObject").transform;
-
-        moveSound = this.transform.Find("PlayerAudio").GetComponent<AudioSource>();
-        playerPhysics.SetRigid2D(this.gameObject.GetComponent<Rigidbody2D>());
-        playerPhysics.SetPlayerObj(this.gameObject);
-
-        playerStatus.speed = 23f;
-        playerStatus.boost = 1; //½ºÅ×ÀÌÁö¸¶´Ù ¹Ù²ñ
+        Setting_init();
     }
 
     void Update()
     {
-        //Ä«¸Ş¶ó¿¡ °ª ³Ö¾îÁÖ±â
-        CameraManager.Instance.Player_Position(this.transform.position);
+        if (isGameStart == false)
+            return;
+        /*ì¹´ë©”ë¼ ë©€ë¦¬ ë³´ê¸° ì½”ë“œ ë‹¤ë¥¸ ê³³ìœ¼ë¡œ ëº„ ì˜ˆì •
+         * if (Input.GetMouseButton(1))
+        {
+            isOutOfCamera = true;
+            CameraManager.Instance.Player_CameraMousePos(this.transform.position);
+        }
+        else
+        {
+            isOutOfCamera = false;
+            CameraManager.Instance.Player_CameraPos(this.transform.position);
+            CameraManager.Instance.Set_Player_LocalPos(this.transform.localPosition);
+        }        
+        ì¹´ë©”ë¼ ë©€ë¦¬ ë³´ê¸° ì½”ë“œ*/
+
+        isOutOfCamera = false;
+        CameraManager.Instance.Player_CameraPos(this.transform.position);
+        CameraManager.Instance.Set_Player_LocalPos(this.transform.localPosition);
+
+        playerRotate = Control_LootAtMouse();
 
         if (isMove == true)
         {
-            TryMove();
+            Control_Move();
         }
-    }
+        Control_Move_Pause(isWall);
 
-    #region ===========================================ÇÃ·¹ÀÌ¾î ½ºÅ×ÀÌÁö ¼¼ÆÃ
-    internal void PlayerNextStatSetting(int stageboost, Vector2 playerpos) //ÇÃ·¹ÀÌ¾î ´ÙÀ½ ½ºÅ×ÀÌÁö ÀÌµ¿
-    {
-        playerStatus.boost = stageboost;
-        this.transform.position = playerpos;
-        isMove = true;
-
-        playerPhysics.PhysicsVelocityControl(0);
-    }
-
-    internal void PlayerRefrashSetting(int stageboost, Vector2 playerpos) //ÇÃ·¹ÀÌ¾î ½ºÅ×ÀÌÁö ¸®ÇÁ·¹½Ã
-    {
-        isMove = true;
-        if (TouchedWall != null && TouchedWall.GetComponent<Joint2D>() != null)
-            TouchedWall.GetComponent<Joint2D>().connectedBody = null;
-        TouchedWall = null;
-        this.transform.parent = null;
-        this.transform.position = playerpos;
-
-        playerStatus.boost = stageboost;
-        PlayerBoostUI(playerStatus.boost);
-
-        playerPhysics.PhysicsSimulateOff();
-
-        playerPhysics.PhysicsVelocityControl(0);
-
-
-    }
-    #endregion ===========================================ÇÃ·¹ÀÌ¾î ½ºÅ×ÀÌÁö ¼¼ÆÃ
-
-    #region ===========================================ÇÃ·¹ÀÌ¾î Á¶ÀÛ
-
-    private void TryMove()//ÇÃ·¹ÀÌ¾î ¹ß»ç
-    {
-        if (isMove == false)
+        if (bulletwaitTime < bulletDelay)
         {
-            return;
+            bulletwaitTime += Time.deltaTime;
+            isShoot = false;
         }
-        //È¸Àü
-        playerRotate = LookAtMouse();
+        else
+            isShoot = true;
 
-        if (Input.GetMouseButtonDown(0) && playerStatus.boost != 0)
+        if (isShoot == true)
+            Control_Shoot();
+    }
+
+    private void FixedUpdate()
+    {
+        //ë¬¼ë¦¬ ì‚¬ìš©ì€ Fixedë¡œ í•˜ë¼ê³  í•œë‹¤
+        if (isMove == true) //ë ˆì´ì € ê³ ì • update
+        {
+            if (Control_LaserColor())
+            {
+                Control_Aria_Laser_Active(isMove);
+                Control_Aria_Laser_Detect(isMove);
+            }
+            else
+                Control_Aria_Laser_Active(isMove);
+        }
+        else if (isMove == false)
+        {
+            Control_LaserColor();
+        }
+    }
+
+    #region í”Œë ˆì´ì–´ ì„¸íŒ…
+    private void Setting_init()
+    {
+        playerAttach    = new PlayerAttach(this.transform.gameObject);
+        audioSource     = this.gameObject.transform.Find("PlayerAudio").GetComponent<AudioSource>();
+        playerSound     = new PlayerSound(audioSource,boostClip, shootClip, bombClip);
+        itemFactory     = new ItemFactory();
+
+        playerRotate    = new Vector2();
+
+        moveLaser       = this.transform.Find("PlayerRotate");
+        detactAria      = moveLaser.Find("DetactAria").GetComponent<SpriteRenderer>();
+        laserAria       = moveLaser.Find("LaserAria").gameObject;
+        playerLaser     = new PlayerLaser();
+        playerLaser.Shoot_Setting(laserAria.transform);
+        stuff_aria      = moveLaser.Find("WallAria").GetComponent<Stuff_Aria>();
+        bulletObject    = GameObject.Find("PlayerShoot").transform.Find("Bullet").transform;
+        animator        = this.transform.Find("PlayerFail").GetComponent<Animator>();
+        
+        Bullet          = new List<Bullet>();
+        Setting_Bullet();
+
+        shootTime = 10;
+    }
+
+    private void Setting_Bullet()
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            Bullet.Add(bulletObject.GetChild(i).GetComponent<Bullet>());
+            Bullet[i].gameObject.SetActive(false);
+        }
+    }
+
+    private void Setting_OtherBullet(BulletData bulletdata)
+    {
+        for(int i = 0; i < 10; i++)
+        {
+            Bullet[i].Bullet_Setting(bulletdata.bullet_kind, bulletdata.bullet_Speed);
+        }
+    }
+
+    internal void Setting_NextStage(Vector2 stagepos)//ë‹¤ìŒ ìŠ¤í…Œì´ì§€ ë„˜ì–´ê°ˆ ì‹œ
+    {
+        //Setting_Game_Start(true);
+        isMove = true;
+        isWall = true;
+        this.transform.parent = null;
+        this.transform.position = stagepos;
+
+        moveLaser.gameObject.SetActive(true);
+        Ani_Refrash();
+
+        playerAttach.Setting_Physics();
+    }
+
+    internal void Setting_Refrash(Vector2 refrashpos)//ìŠ¤í…Œì´ì§€ ì¬ì‹œì‘ í•  ì‹œ
+    {
+        isMove = true;
+        isWall = true;
+        isShoot = true;
+        _explodable = null;
+        wallTag = null;
+        this.transform.parent = null;
+        this.transform.position = refrashpos;
+
+        moveLaser.gameObject.SetActive(true);
+        Control_Aria_Active(true);
+
+        Ani_Refrash();
+
+        playerAttach.Setting_Physics();
+        Control_ShootRefrash();
+    }
+
+    internal void Setting_StageAria(Vector2 _limitX, Vector2 _limitY)
+    {
+        limitX = _limitX;
+        limitY = _limitY;
+    }
+
+    private void Setting_FailGoal()//ëª©í‘œ ì‹¤íŒ¨ ë° ì£½ì—ˆì„ ë•Œ
+    {
+        Setting_Game_Start(false);
+        isMove = false;
+        isWall = false;
+        moveLaser.gameObject.SetActive(false);
+        playerAttach.Physics_Simulate(false);
+        Ani_GoalFail();
+    }
+
+    internal void Setting_GameEnd()
+    {
+        isMove = false;
+        isWall = false;
+    }
+
+    internal void Setting_Pause(bool pause)//ì¼ì‹œì •ì§€
+    {
+        isMove = pause;
+    }
+
+    internal void Setting_Game_Start(bool check)//ê²Œì„ ì‹œì‘ í™•ì¸ìš©ë„
+    {
+        isGameStart = check;
+    }
+
+
+    internal void Setting_Trigger(bool check)//íŠ¸ë¦¬ê±° ì§„í–‰ ì‹œ ìºë¦­í„° ì•ˆë³´ì´ê²Œ í•˜ê¸°
+    {
+        moveLaser.gameObject.SetActive(check);
+        animator.gameObject.SetActive(check);
+    }
+
+    private void Setting_SpecielStage()
+    {
+        GameManager.Instance.Setting_SpecielStage();
+    }
+
+    internal void Setting_ControlKey(KeyCode boost, KeyCode Shoot)          //í”Œë ˆì´ì–´ í‚¤ ë³€ê²½
+    {
+        boostKey = boost;
+        shootKey = Shoot;
+    }
+
+    internal void Setting_SoundValue(float sound)                       //í”Œë ˆì´ì–´ ì‚¬ìš´ë“œ ë³€ê²½
+    {
+        playerSound.Player_SoundValue(sound);
+    }
+    #endregion í”Œë ˆì´ì–´ ì„¸íŒ…
+
+    #region í”Œë ˆì´ì–´ ì¡°ì‘
+    private void Control_Move()//í”Œë ˆì´ì–´ ì´ë™ //ìŠ¬ë¡œìš°ëª¨ì…˜ ì¶”ê°€í•¨
+    {
+        if (EventSystem.current.IsPointerOverGameObject() == true)
+            return;
+
+        if (Input.GetKey(boostKey) && isWall == true && isMove == true)
+        {
+            Control_Move_SlowDown(0.2f);
+            if (wallTag != null) //í”Œë ˆì´ì–´ íƒˆì¶œ ì‹œ
+            {
+                if (wallTag == "HingeWall")
+                    playerAttach.Detach_Wall();
+                else if (wallTag == "StaticWall")
+                    playerAttach.Detach_StaticWall();
+            }
+        }
+
+        if(Input.GetKeyUp(boostKey))
+            Control_Move_SlowDown(1f);
+
+        if (Input.GetKeyUp(boostKey) && isWall == true && isMove == true)
         {
             if (EventSystem.current.IsPointerOverGameObject() == true)
                 return;
 
+            if (Control_UseBoost() == false) //ë¶€ìŠ¤í„° ì‚¬ìš© í•  ìˆ˜ ì—†ì„ ì‹œ
+                return;
+
             this.transform.parent = null;
-            this.transform.up = playerRotate; //¹Ù²Ü ¼ö ¾øÀ»±î
+            this.transform.up = playerRotate; //ë°”ê¿€ ìˆ˜ ìˆë‹¤ë©´ ë°”ê¿€ ê²ƒ
             isMove = false;
             isWall = false;
 
-            moveLaser.gameObject.SetActive(isMove);
+            Control_Aria_Active(isMove);
+            Control_Aria_Laser_Active(isMove);
 
-            playerStatus.boost--;
+            playerAttach.Physics_Velocity(movespeed);//ì†ë„ ì¡°ì‘
 
-            PlayerBoostUI(playerStatus.boost);//ÇÃ·¹ÀÌ¾î°¡ ÀÌµ¿ ½Ã UI
-
-            playerPhysics.PhysicsVelocityControl(playerStatus.speed);//¹ß»ç
-
-            if (TouchedWall != null) //ÇÃ·¹ÀÌ¾î º®¿¡¼­ ¶¼±â
+            if (wallTag != null) //í”Œë ˆì´ì–´ íƒˆì¶œ ì‹œ
             {
-                if (TouchedWall.tag == "Wall")
-                    DetachWall();
-                else if (TouchedWall.tag == "StaticWall")
-                    DetachStaticWall();
+                if (wallTag == "HingeWall")
+                    playerAttach.Detach_Wall();
+                else if (wallTag == "StaticWall")
+                    playerAttach.Detach_StaticWall();
+                else if (wallTag == "BrokenWall")
+                {
+                    playerAttach.Detach_StaticWall();
+                    _explodable.explode();
+                    _explodable = null;
+                    ExplosionForce ef = GameManager.Instance.GetComponent<ExplosionForce>();
+                    ef.doExplosion(transform.position);
+                }
             }
 
-            playerPhysics.PhysicsSimulateOn();//¹°¸® ½ÇÇà
+            playerAttach.Physics_Simulate(true);//í”Œë ˆì´ì–´ ë¬¼ë¦¬ ì‘ë™
 
-            PlayerMoveSound();//ÇÃ·¹ÀÌ¾î »ç¿îµå ½ÇÇà
+            Sound_UseBoost();
         }
     }
 
-    private void PlayerBoostUI(int boost)//ÇÃ·¹ÀÌ¾î°¡ ÀÌµ¿ ½Ã UI
+    private void Control_Shoot()
     {
-        GameManager.Instance.PlayerMoved(boost);
+
+        if (Input.GetKey(shootKey) && !Input.GetKey(boostKey) && isShoot == true && isWall == true)
+        {
+            bulletwaitTime = 0;
+
+            if (EventSystem.current.IsPointerOverGameObject() == true)
+                return;
+
+            if (shootTime == 0)
+                return;
+
+            Control_TryShoot();
+        }
     }
 
-    private void PlayerMoveSound()
+    private void Control_TryShoot()
     {
-        moveSound.Play();
+        bulltcount++;
+
+        if (bulltcount >= 10) bulltcount = 0;
+
+        if (Bullet[bulltcount].gameObject.activeInHierarchy == false)
+        {
+            if (Bullet[bulltcount].Bullet_IsMove() == true)
+                return;
+
+            if (Control_UseShoot() == false) return;
+
+            Bullet[bulltcount].Bullet_Deactive();
+            Bullet[bulltcount].gameObject.transform.position = shootLocation.position;
+            Bullet[bulltcount].gameObject.transform.up = playerRotate;
+            Bullet[bulltcount].Bullet_Velocity(playerRotate);
+            Bullet[bulltcount].gameObject.SetActive(true);
+            Bullet[bulltcount].Bullet_Active();
+            shootTime--;
+            Sound_UseShoot();
+        }
     }
 
-    private void ControlSpeed() //¾ÆÀÌÅÛÀÌ³ª ¹º°¡ ÇßÀ» ¶§ ¼Óµµ Á¶Á¤
+    internal void Control_ShootCountUP()
     {
-
+        if (shootTime >= 0 && shootTime < 10)
+            shootTime++;
     }
 
-    private Vector2 LookAtMouse()//ÇÃ·¹ÀÌ¾î°¡ ´Ù¸¥ °¢µµ·Î ³¯¾Æ°¡±â À§ÇØ À§Ä¡ ¾Ë·ÁÁÜ
+    private void Control_ShootRefrash()
     {
-        Vector2 t_mousePos = CameraManager.Instance.Camera.ScreenToWorldPoint(Input.mousePosition);
+        for(int i = 0; i < Bullet.Count; i++)
+        {
+            Bullet[i].Bullet_Refrash();
+        }
+    }
 
-        float mousePosX = (t_mousePos.x - playerRotateObj.position.x);
-        float mousePosY = (t_mousePos.y - playerRotateObj.position.y);
+    private Vector2 Control_LootAtMouse()//í”Œë ˆì´ì–´ ë§ˆìš°ìŠ¤ ì´ë™
+    {
+        Vector2 t_mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
 
-        /*Vector2 t_direction = new Vector2((t_mousePos.x - playerRotateObj.position.x),
-                                          (t_mousePos.y - playerRotateObj.position.y));*/
+        float mousePosX = (t_mousePos.x - moveLaser.position.x);
+        float mousePosY = (t_mousePos.y - moveLaser.position.y);
+
         Vector2 t_direction = new Vector2((mousePosX),
                                           (mousePosY));
 
-        /*Debug.Log(t_direction);
-        Debug.Log(5 * (Mathf.Cos(90 + currentRadius)));*/
-        /*if (t_direction.x < 5 * (Mathf.Cos(90)))
-            t_direction.x = 5 * (Mathf.Cos(90));
-        if (t_direction.x > -(5 * (Mathf.Cos(90))))
-            t_direction.x = -(5 * (Mathf.Cos(90)));
-        if (t_direction.y < Mathf.Cos(90))
-            t_direction.y = Mathf.Cos(90);*/
-
-        //this.transform.up = t_direction;
-        playerRotateObj.transform.up = t_direction;
+        moveLaser.transform.up = t_direction;
         return t_direction;
     }
 
-    #endregion ===========================================ÇÃ·¹ÀÌ¾î Á¶ÀÛ
-    #region ===========================================ÇÃ·¹ÀÌ¾î ¹°¸®
-
-    //Áß½ÉÀÌ µÇ´Â ÇÑ °´Ã¼°¡ ÀÖ°í, °´Ã¼°¡ Áß½ÉÀÌ µÇ¾î ´ê´Â °¢µµ·ÎºÎÅÍ ¹İ´ë·Î(±×´Ï±î ´ê¾ÒÀ» À§Ä¡¿¡ ¼¹À» ¶§ °¢µµ¸¦ °Å²Ù·Î
-    //°¢µµ°¡ °Å²Ù·Î µÇ¾úÀ¸´Ï±î È¸Àü °¢Àº Áß½É °¢À» ´õÇÑ¸¸Å­¸¸ ÀÌµ¿ÇÏ°í °¢µµ¸¦ Á¦ÇÑ
-    //±×·¯¸é °¢µµ°¡ ¾îµğ·Î °¡´ø Ç×»ó Á¦ÇÑÀ» ÁÙ ¼ö ÀÖ´Ù.
-
-    /*private void PlayerWallTouch()
+    private bool Control_LaserColor()//ë ˆì´ì €ê°€ ë²½ì— ë‹¿ì•˜ì„ ì‹œ
     {
-        if (wallTouched == null)
+        bool detactcheck = stuff_aria.DetactCheck();
+
+        if (isWall == false)
+            return true;
+
+        if (detactcheck == true)
+        {
+            isMove = false;
+            detactAria.color = Color.black;
+            return false;
+        }
+        else
+        {
+            isMove = true;
+            detactAria.color = Color.white;
+            return true;
+        }
+    }
+
+    private bool Control_UseBoost()//ì´ë™ ì‹œ UIë¡œ ê°’ ë°˜í™˜
+    {
+        return GameManager.Instance.Player_MovedUI();
+    }
+    private bool Control_UseShoot()//ì‚¬ê²© ì‹œ UIë¡œ ê°’ ë°˜í™˜
+    {
+        return GameManager.Instance.Player_ShootUI();
+    }
+
+    private void Control_Move_Pause(bool moved)//í”Œë ˆì´ì–´ ì´ë™ ì‹œ Pause ë¹„í™œì„±í™”
+    {
+        GameManager.Instance.Player_Moved_Pause(moved);
+    }
+
+    private void Control_Aria_Active(bool active)//í”Œë ˆì´ì–´ ì´ë™ ì‹œ ë²”ìœ„ í™œì„±&ë¹„í™œì„±
+    {
+        detactAria.gameObject.SetActive(active);
+    }
+    
+    //ë ˆì´ì € ìš°ì„  ë³´ë¥˜...
+    //ì™œ ì˜ ì•ˆë˜ëŠ”ê±¸ê¹Œ
+    //ë‚´ ì½”ë“œì— ë¬´ì—‡ì´ ì˜ëª»ë˜ì–´ìˆëŠ”ê²ƒì¼ê¹Œ
+    //ì” ì—ëŸ¬ê°€ ë§ë‹¤.
+    private void Control_Aria_Laser_Detect(bool active)
+    {
+        if (active == false)
             return;
 
-        float touchedX = 0;
-        float touchedY = 0;
+        //ë ˆì´ì¼€ìŠ¤íŠ¸ ì˜ëŠ” ìœ„ì¹˜, ë°©í–¥, ê²°ê³¼ê°’ ë“±ë“±
+        //ê±°ë¦¬ì— ë”°ë¥¸ ë ˆì´ì € ìŠ¤ì¼€ì¼ ë³€í™”
+        laserAria.transform.localScale = playerLaser.Shoot_Laser();
+    }
 
-
-        Vector2 centerDot = wallTouched.transform.position;
-
-        float length = Vector2.Distance(centerDot, wallTouchLocation);
-        joint -=wallTouched.rotation.z;
-        Debug.Log(joint);
-        //touchedX = wallTouchLocation.x + Mathf.Cos((wallTouched.rotation.z + Mathf.PI / 11) * 30);
-        //touchedY = wallTouchLocation.y + Mathf.Cos((wallTouched.rotation.z + Mathf.PI / 11) * 30);
-        //touchedX = Mathf.Cos(Mathf.Deg2Rad * 360 / wallTouched.rotation.z) * length;
-        //touchedY = Mathf.Sin(Mathf.Deg2Rad * 360 / wallTouched.rotation.z) * length;
-        //touchedX = centerDot.x + Mathf.Cos(Mathf.Deg2Rad * 360 / wallTouched.rotation.z) * length;
-        //touchedY = centerDot.y - Mathf.Sin(Mathf.Deg2Rad * 360 / wallTouched.rotation.z) * length;
-        touchedX = centerDot.x + (Mathf.Cos(joint * (Mathf.PI / 180)) * length) * -1;
-        touchedY = centerDot.y - (Mathf.Sin(joint * (Mathf.PI / 180)) * length) * -1;
-
-        //touchedX = centerDot.x + (length * Mathf.Cos(wallTouched.rotation.z * Mathf.PI / 180)); 
-        //touchedY = centerDot.y - (length * Mathf.Sin(wallTouched.rotation.z * Mathf.PI / 180));
-
-
-        this.transform.position = new Vector3(touchedX, touchedY);
-    }*/
-
-
-    //===========================================º®
-    private void OnCollisionEnter2D(Collision2D collision) //º® ÅÍÄ¡
+    private void Control_Aria_Laser_Active(bool active)
     {
-        moveLaser.gameObject.SetActive(true);
-        switch (collision.gameObject.tag)
+        playerLaser.Shoot_Laser_Active(active);
+    }
+
+    private void Control_Move_SlowDown(float time) //ì‹œê°„ ëŠë ¤ì§€ê²Œí•˜ê¸°
+    {
+        GameManager.Instance.Player_Move_Slowdown(time);
+    }
+    #endregion í”Œë ˆì´ì–´ ì¡°ì‘
+
+    #region í”Œë ˆì´ì–´ ì‚¬ìš´ë“œ
+    private void Sound_UseBoost()//ë¶€ìŠ¤í„° ì‚¬ìš© ì‹œ
+    {
+        playerSound.Player_UseBoost();
+    }
+    private void Sound_UseShoot()//íƒ„ì•½ ì‚¬ìš© ì‹œ
+    {
+        playerSound.Player_UseShoot();
+    }
+    #endregion í”Œë ˆì´ì–´ ì‚¬ìš´ë“œ
+
+    #region í”Œë ˆì´ì–´ ì• ë‹ˆë©”ì´ì…˜
+    private void Ani_GoalFail()
+    {
+        animator.SetBool("Player_Fail", true);
+    }
+
+    private void Ani_BoostOut()
+    {
+        animator.SetBool("Player_BoostOut", true);
+    }
+
+    private void Ani_Refrash()
+    {
+        animator.StartPlayback();
+        animator.StopPlayback();
+        animator.SetBool("Player_Fail", false);
+    }
+    #endregion í”Œë ˆì´ì–´ ì• ë‹ˆë©”ì´ì…˜
+
+    #region í”Œë ˆì´ì–´ ë¬¼ë¦¬
+    private void OnCollisionEnter2D(Collision2D collision)
+    {
+        Control_Aria_Active(true);
+        isMove = true;
+        isWall = true;
+        wallTag = collision.gameObject.tag;
+        if(wallTag != "Untagged")
+            this.transform.parent = collision.transform;
+
+
+        //GameManager.Instance.Camera_Shake();
+
+        switch (wallTag)
         {
-            case "Wall":
-                AttachWall(collision);
+            case "HingeWall":
+                playerAttach.Attach_Wall(collision.transform);
+                GameManager.Instance.Player_GameEnd();//ê²Œì„ ì—”ë”© ì¡°ê±´
                 break;
             case "StaticWall":
-                AttachStaticWall(collision);
+                Setting_SpecielStage();
+                playerAttach.Attach_StaticWall(collision.transform);
+                GameManager.Instance.Player_GameEnd();//ê²Œì„ ì—”ë”© ì¡°ê±´
                 break;
-            case "Goal":
-                GoalWall();
+            case "GoalWall":
+                playerAttach.Attach_StaticWall(collision.transform);
+                if (GameManager.Instance.Player_StageGoal() == false)//ê²Œì„ ì—”ë”© ì¡°ê±´
+                    Setting_FailGoal();
                 break;
-            case "OutWall":
-                AttachOutWall();
+            case "BrokenWall":
+                this.transform.parent = collision.transform.parent;
+                playerAttach.Attach_BrokenWall(collision.transform);
+                _explodable = collision.transform.GetComponent<Explodable>();
+                GameManager.Instance.Player_GameEnd();
+                break;
+            case "FlowWall":
+                playerAttach.Attach_StaticWall(collision.transform);
+                if (GameManager.Instance.Player_FlowGoal() == false)//ê²Œì„ ì—”ë”© ì¡°ê±´
+                    Setting_FailGoal();
+                break;
+            case "Trigger":
+                playerAttach.Attach_Wall(collision.transform);
+                break;
+            case "End":
+                GameManager.Instance.Player_PlayEnd();//ê²Œì„ íŠ¸ë¦¬ê±° ì§„í–‰
+                playerAttach.Attach_Wall(collision.transform);
+                break;
+            case "Enemy"://ì‹œìŠ¤í…œ ë°”ê¿€ ë•Œ ê±´ë“œë¦´ ê³³ì„
+                playerAttach.Attach_StaticWall(collision.transform);
+                Control_Move_SlowDown(1f);
+                if (GameManager.Instance.Player_StageGoal() == false)//ê²Œì„ íŒ¨ë°° ì¡°ê±´
+                    Setting_FailGoal();
                 break;
         }
     }
 
-    internal void AttachWall(Collision2D collision) //º®ÇÏ°í ÇÃ·¹ÀÌ¾î Á¢ÃË
+    internal void TriggerEnter2D(string tagname)
     {
-
-        if (TouchedWall == collision.transform) return;
-
-        isWall = true;
-        isMove = true;
-
-
-        TouchedWall = collision.transform;
-        this.transform.parent = TouchedWall;
-
-        playerPhysics.PhysicsAttachWall();
-        TouchedWall.GetComponent<Joint2D>().connectedBody = playerPhysics.GetRigid2D();
-
-        AttachPlayerRotate(TouchedWall.GetChild(0));
-    }
-
-    private void AttachStaticWall(Collision2D collision) //¿òÁ÷ÀÌÁö ¾Ê´Â º®ÇÏ°í ÇÃ·¹ÀÌ¾î Á¢ÃË
-    {
-
-        if (TouchedWall == collision.transform) return;
-
-        isWall = true;
-        isMove = true;
-
-
-        TouchedWall = collision.transform;
-        this.transform.parent = TouchedWall;
-
-        playerPhysics.PhysicsAttchStaticWall();
-
-        AttachPlayerRotate(TouchedWall.GetChild(0));
-    }
-
-    private void AttachPlayerRotate(Transform block)
-    {
-        Vector2 thisPos = this.transform.localPosition;
-        Vector3 tempPos = new Vector3();
-
-        if (thisPos.x > block.localScale.x * 0.5f && thisPos.y < block.localScale.y && thisPos.y > -block.localScale.y)//x°¡ +ºí·Ï ±æÀÌº¸´Ù ÀÛ°í -ºí·Ï ±æÀÌº¸´Ù Å©°Ô y°¡ 1º¸´Ù ÀÛ°í -1º¸´Ù Å©°í 
-            tempPos = new Vector3(0, 0, 270);
-        if (thisPos.x < -block.localScale.x * 0.5f && thisPos.y < block.localScale.y && thisPos.y > -block.localScale.y)
-            tempPos = new Vector3(0, 0, 90);
-
-        if (thisPos.y > block.localScale.y)
-            tempPos = new Vector3(0, 0, 0);
-        if (thisPos.y < -block.localScale.y)
-            tempPos = new Vector3(0, 0, 180);
-
-        this.transform.localRotation = Quaternion.Euler(tempPos);
-    }
-
-    private void AttachOutWall()
-    {
-        StageManager.Instance.StageRefrashBtn();
-    }
-
-    private void GoalWall()
-    {
-        if (playerStatus.boost == 0)
-            GameManager.Instance.PlayerGoalIn();
-        else
-            StageManager.Instance.StageRefrashBtn();
-    }
-
-    private void DetachWall() //º®ÇÏ°í ÇÃ·¹ÀÌ¾î ºĞ¸®
-    {
-        if (TouchedWall == null) return;
-
-        this.transform.parent = null;
-        TouchedWall.GetComponent<Joint2D>().connectedBody = null;
-    }
-
-    private void DetachStaticWall()
-    {
-        if (TouchedWall == null) return;
-
-        this.transform.parent = null;
-    }
-    #endregion ===========================================ÇÃ·¹ÀÌ¾î ¹°¸®
-
-    #region =====================================¾ÆÀÌÅÛ
-    private void OnTriggerEnter2D(Collider2D collision) //¾ÆÀÌÅÛ ÅÍÄ¡
-    {
-        switch (collision.gameObject.tag)
+        switch (tagname)
         {
-            case "Item":
-                GetItemData("Item", 1);
-                collision.gameObject.SetActive(false);
+            case "boost":
+                GetItemData("boost", 1);
+                break;
+            case "shoot":
+                GetItemData("shoot", 1);
+                break;
+            case "Bomb":
+                GameManager.Instance.Player_Hit();
+                Control_Move_SlowDown(1f);
+                if (GameManager.Instance.Player_HP_Check() == false)//ê²Œì„ íŒ¨ë°° ì¡°ê±´
+                {
+                    Setting_Game_Start(false);
+                    playerAttach.Attach_BombItem();
+                    Setting_FailGoal();
+                }
+                break;
+            case "QuestItem":
+                GameManager.Instance.Player_QuestEngage();
+                break;
+            case "Trigger":
+                GameManager.Instance.Player_TriggerGoal();//ê²Œì„ íŠ¸ë¦¬ê±° ì§„í–‰
+                Setting_Trigger(false);
+                break;
+            case "normalBullet":
+                GetItemData("normalBullet", 2);
+                break;
+            case "bounceBullet":
+                GetItemData("bounceBullet", 2);
+                break;
+            case "EnemyBullet":
+                GameManager.Instance.Player_Hit();
+                Control_Move_SlowDown(1f);
+                if (GameManager.Instance.Player_HP_Check() == false)//ê²Œì„ íŒ¨ë°° ì¡°ê±´
+                {
+                    Setting_Game_Start(false);
+                    playerAttach.Attach_BombItem();
+                    Setting_FailGoal();
+                }
                 break;
         }
     }
+    
+    private void OnBecameInvisible()
+    {
+        if (isOutOfCamera == true) return; //ì¹´ë©”ë¼ ë©€ë¦¬ ë³´ê¸° ì½”ë“œì„
 
-    private void GetItemData(string itemname, int itemvalue)//¾ÆÀÌÅÛ °¡Á®¿À´Â ÆÑÅä¸® ÆĞÅÏ
+        Control_Aria_Active(false);
+        isMove = true;
+        /*Debug.Log("ì£½ì—ˆì„ ë•Œ ì´ë™ ë¬¸ì œ" + this.gameObject.transform.position.x);
+        Debug.Log("ê²Œì„ ì‹œì‘ ë¬¸ì œ" + isGameStart) ;
+        Debug.Log("ë²”ìœ„ ë‚˜ê° ë¬¸ì œ" +  Player_Out_StageAria());*/
+        if (this.gameObject.transform.position.x != -1000 && isGameStart == true && Player_Out_StageAria() == true)
+            GameManager.Instance.Player_GameOver();
+    }
+
+    private bool Player_Out_StageAria()
+    {
+        //LimitPosX.x = +X || LimitPosX.y = -X
+        //LimitPosY.x = +Y || LimitPosY.y = -Y
+
+        if (this.transform.position.x < limitX.x)
+            return true;
+        else if (this.transform.position.x > limitX.y)
+            return true;
+
+        if (this.transform.position.y < limitY.x)
+            return true;
+        else if (this.transform.position.y > limitY.y)
+            return true;
+
+        return false;
+    }
+    #endregion í”Œë ˆì´ì–´ ë¬¼ë¦¬
+
+    #region ì•„ì´í…œ íš¨ê³¼ ë°›ìŒ
+    private void GetItemData(string itemname, int itemvalue)//í”Œë ˆì´ì–´ê°€ ì•„ì´í…œì„ ë¨¹ìŒ
     {
         int index = 0;
+        BulletData bulletdata = new BulletData();
         ItemList itemfindfactory;
 
         itemfindfactory = itemFactory.GetItemValue(itemname);
-        index           = itemfindfactory.getItemStatus(itemvalue);
 
-        ItemEffectApply(index);
+        if (itemvalue == 1)
+        {
+            index = itemfindfactory.getItemStatus(itemname);
+            Item_EffectApply(itemname, index);
+        }
+        else if (itemvalue == 2)
+        {
+            bulletdata = itemfindfactory.getBulletItemStatus(itemname);
+            Item_BulletEffectApply(bulletdata);
+        }
     }
 
-    private void ItemEffectApply(int effect) //¾ÆÀÌÅÛ È¿°ú Àû¿ë
+    private void Item_EffectApply(string itemname, int value)//ì•„ì´í…œ íš¨ê³¼ ë°˜í™˜
     {
-        playerStatus.boost += effect;
-        PlayerBoostUI(playerStatus.boost);
+        GameManager.Instance.Player_GetItem(itemname, value);
     }
-    #endregion =====================================¾ÆÀÌÅÛ
 
-
+    private void Item_BulletEffectApply(BulletData bulletdata)
+    {
+        Setting_OtherBullet(bulletdata);
+    }
+    #endregion ì•„ì´í…œ íš¨ê³¼ ë°›ìŒ
 }
