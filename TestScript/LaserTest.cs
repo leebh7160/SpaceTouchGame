@@ -18,7 +18,7 @@ public class LaserTest : MonoBehaviour
     // Update is called once per frame
     void FixedUpdate()
     {
-        TestRay();
+        //TestRay();
     }
 
 

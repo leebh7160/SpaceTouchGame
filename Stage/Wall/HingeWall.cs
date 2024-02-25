@@ -19,14 +19,26 @@ public class HingeWall : MonoBehaviour
     private HingeJoint2D joint;
     protected JointMotor2D joint2d;
     private SpriteRenderer coreRender;
+    private Rigidbody2D rigid2d;
 
-
-    public void Start()
+    internal void OnEnable()
     {
-        joint = this.gameObject.GetComponent<HingeJoint2D>();
-        joint.useMotor = true;
-        joint2d     = this.gameObject.GetComponent<HingeJoint2D>().motor;
-        coreRender  = this.gameObject.transform.Find("Core").GetComponent<SpriteRenderer>();
+        Hinge_refrash();
+    }
+
+    internal void Hinge_refrash()
+    {
+        joint                   = this.gameObject.GetComponent<HingeJoint2D>();
+        joint.useMotor          = true;
+        joint2d                 = this.gameObject.GetComponent<HingeJoint2D>().motor;
+        rigid2d                 = this.gameObject.GetComponent<Rigidbody2D>();
+        coreRender              = this.gameObject.transform.Find("Core").GetComponent<SpriteRenderer>();
+
+        isRotate                = false;
+        rigid2d.freezeRotation  = true;
+        joint2d.motorSpeed      = 0f;
+        joint.motor             = joint2d;
+        Interaction_Rotate(false);
     }
 
     //회전 시 작용해야 할 것들
@@ -38,13 +50,17 @@ public class HingeWall : MonoBehaviour
 
         if (isRotate == true)
         {
+            rigid2d.freezeRotation = false;
             if (isReverse == true)
                 joint2d.motorSpeed = -50f;
             else
                 joint2d.motorSpeed = 50f;
         }
         else
+        {
+            rigid2d.freezeRotation = true;
             joint2d.motorSpeed = 0f;
+        }
 
         joint.motor = joint2d;
     }

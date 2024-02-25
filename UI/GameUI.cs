@@ -181,7 +181,7 @@ public class GameUI : MonoBehaviour
         SettingUI_Resolution();//해상도 세팅
 
 
-        stageUI = this.transform.Find("StageUI");
+        stageUI                 = this.transform.Find("StageUI");
         stageFirst              = stageUI.Find("FirstStageButton");
         stageSecond             = stageUI.Find("SecondStageButton");
         stageButtonList         = new List<GameObject>();

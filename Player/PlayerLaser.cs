@@ -12,6 +12,7 @@ public class PlayerLaser
     //아직도 그것을 잘 못고치겠다.
     private float layDistance = 100;
     private Transform laserAria;
+    RaycastHit2D hit;
     //private Ray2D ray2D;
 
     internal void Shoot_Setting(Transform _laserAria)
@@ -26,10 +27,8 @@ public class PlayerLaser
 
     internal Vector3 Shoot_Laser()
     {
-        RaycastHit2D hit = Physics2D.Raycast(laserAria.position, laserAria.up, layDistance, LayerMask.GetMask("Wall"));
+        hit = Physics2D.Raycast(laserAria.position, laserAria.up, layDistance, LayerMask.GetMask("Wall"));
 
-        /*Debug.Log(hit.distance);
-        Debug.DrawRay(laserAria.position, new Vector2(0,1),Color.red);*/
         if (hit.distance <= 0)
             return new Vector3(1, layDistance);
         else

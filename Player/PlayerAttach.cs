@@ -118,7 +118,7 @@ public class PlayerAttach
     #endregion 벽 하고 접촉
 
     #region 벽 하고 분리
-    internal void Detach_Wall()//벽하고 분리 시
+    internal void Detach_Wall()//돌아가는 벽하고 분리하면 부모와 연결 끊기
     {
         if (touchWall == null) return;
 

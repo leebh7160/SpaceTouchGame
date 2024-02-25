@@ -38,6 +38,8 @@ public class StageManager : MonoBehaviour
 
     //===========================참조
 
+    [SerializeField] private GameObject EnemyDeadBodyContainer;
+
     //===========================스테이지 리스트
 
     //https://unityindepth.tistory.com/56
@@ -206,6 +208,8 @@ public class StageManager : MonoBehaviour
         if (stageCount >= 41) stageCount = 41;
         int stageChildCount = stageDataLists[stageCount].Stage.transform.childCount;
 
+        StageRefrashEnemyBody();
+
         for (int i = 0; i < stageChildCount; i++)
         {            
             Transform tempObj = stageDataLists[stageCount].Stage.transform.GetChild(i);
@@ -214,14 +218,12 @@ public class StageManager : MonoBehaviour
             if (tempObj.name == "FregmentParent")
             {
                 StageRefrashChild(tempObj);
-                continue;
             }
 
             //적군 추가
             if (tempObj.name == "EnemyParent")
             {
                 StageEnemyChildSet(tempObj, stageCount);
-                continue;
             }
 
             tempObj.gameObject.SetActive(true);
@@ -249,6 +251,17 @@ public class StageManager : MonoBehaviour
         for(int i = 0; i < parentobj.childCount; i++)
         {
             parentobj.GetChild(i).gameObject.SetActive(false);
+        }
+    }
+
+    private void StageRefrashEnemyBody()//적군 시체 제거 용도
+    {
+        if (EnemyDeadBodyContainer == null)
+            return;
+
+        for(int i = 0; i < EnemyDeadBodyContainer.transform.childCount; i++)
+        {
+            Destroy(EnemyDeadBodyContainer.transform.GetChild(i).gameObject);
         }
     }
 

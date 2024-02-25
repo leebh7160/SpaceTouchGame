@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -25,6 +26,7 @@ public class Player : MonoBehaviour
     private int bulltcount = 0;
     [SerializeField] private float bulletDelay = 0.3f;
     private float bulletwaitTime = 1;
+    private string lastwallname = null;
 
     //====================레이저
     private SpriteRenderer detactAria;
@@ -73,45 +75,51 @@ public class Player : MonoBehaviour
     {
         if (isGameStart == false)
             return;
-        /*카메라 멀리 보기 코드 다른 곳으로 뺄 예정
-         * if (Input.GetMouseButton(1))
-        {
-            isOutOfCamera = true;
-            CameraManager.Instance.Player_CameraMousePos(this.transform.position);
-        }
-        else
-        {
-            isOutOfCamera = false;
-            CameraManager.Instance.Player_CameraPos(this.transform.position);
-            CameraManager.Instance.Set_Player_LocalPos(this.transform.localPosition);
-        }        
-        카메라 멀리 보기 코드*/
 
-        isOutOfCamera = false;
+        Control_Camera_LookFar(); //카메라 멀리 보기 코드
+
+       /* isOutOfCamera = false;
         CameraManager.Instance.Player_CameraPos(this.transform.position);
-        CameraManager.Instance.Set_Player_LocalPos(this.transform.localPosition);
+        CameraManager.Instance.Set_Player_LocalPos(this.transform.localPosition);*/
 
-        playerRotate = Control_LootAtMouse();
+        playerRotate = Control_LootAtMouse(); //플레이어 회전 코드
 
         if (isMove == true)
-        {
-            Control_Move();
-        }
-        Control_Move_Pause(isWall);
-
-        if (bulletwaitTime < bulletDelay)
-        {
-            bulletwaitTime += Time.deltaTime;
-            isShoot = false;
-        }
+            Control_Move();//플레이어 이동 코드
         else
-            isShoot = true;
+            Control_Move_SlowDown(1f);//플레이어 시간 고정 버그 수정 용도
+
+        Control_Move_Pause(isWall);//플레이어 Pause 비활성/활성
+
+        LaserUpdate();//플레이어 위치 이동 레이저
+
+        isShoot = Control_ShootDelay();//플레이어 사격 딜레이 코드
 
         if (isShoot == true)
-            Control_Shoot();
+            Control_Shoot();//플레이어 사격 코드
     }
 
-    private void FixedUpdate()
+    /* 프레임문제가 있음
+     * private void FixedUpdate()
+     {
+         //물리 사용은 Fixed로 하라고 한다
+         if (isMove == true) //레이저 고정 update
+         {
+             if (Control_LaserColor())
+             {
+                 Control_Aria_Laser_Active(isMove);
+                 Control_Aria_Laser_Detect(isMove);
+             }
+             else
+                 Control_Aria_Laser_Active(isMove);
+         }
+         else if (isMove == false)
+         {
+             Control_LaserColor();
+         }
+     }*/
+
+    private void LaserUpdate()
     {
         //물리 사용은 Fixed로 하라고 한다
         if (isMove == true) //레이저 고정 update
@@ -127,11 +135,12 @@ public class Player : MonoBehaviour
         else if (isMove == false)
         {
             Control_LaserColor();
+
         }
     }
 
-    #region 플레이어 세팅
-    private void Setting_init()
+        #region 플레이어 세팅
+        private void Setting_init()
     {
         playerAttach    = new PlayerAttach(this.transform.gameObject);
         audioSource     = this.gameObject.transform.Find("PlayerAudio").GetComponent<AudioSource>();
@@ -193,6 +202,7 @@ public class Player : MonoBehaviour
         isShoot = true;
         _explodable = null;
         wallTag = null;
+        lastwallname = null;
         this.transform.parent = null;
         this.transform.position = refrashpos;
 
@@ -267,24 +277,29 @@ public class Player : MonoBehaviour
         if (EventSystem.current.IsPointerOverGameObject() == true)
             return;
 
-        if (Input.GetKey(boostKey) && isWall == true && isMove == true)
+        if (Input.GetKey(boostKey) && isWall == true && isMove == true)//e키 누르고 있을 시
         {
+            Debug.Log("이동 눌렀을 때");
             Control_Move_SlowDown(0.2f);
+
             if (wallTag != null) //플레이어 탈출 시
             {
-                if (wallTag == "HingeWall")
+                /*if (wallTag == "HingeWall")
                     playerAttach.Detach_Wall();
-                else if (wallTag == "StaticWall")
+                else */if (wallTag == "StaticWall")
+                    playerAttach.Detach_StaticWall();
+                else if (wallTag == "BrokenWall")
                     playerAttach.Detach_StaticWall();
             }
         }
 
-        if(Input.GetKeyUp(boostKey))
+        if (Input.GetKeyUp(boostKey))//e키 떌 때 시간만
             Control_Move_SlowDown(1f);
 
-        if (Input.GetKeyUp(boostKey) && isWall == true && isMove == true)
+        if (Input.GetKeyUp(boostKey) && isWall == true && isMove == true) //벽에서 e키 땔 때
         {
-            if (EventSystem.current.IsPointerOverGameObject() == true)
+
+            if (EventSystem.current.IsPointerOverGameObject() == true)//UI로 때는건 막기
                 return;
 
             if (Control_UseBoost() == false) //부스터 사용 할 수 없을 시
@@ -300,6 +315,8 @@ public class Player : MonoBehaviour
 
             playerAttach.Physics_Velocity(movespeed);//속도 조작
 
+            playerAttach.Physics_Simulate(true);//플레이어 물리 작동
+
             if (wallTag != null) //플레이어 탈출 시
             {
                 if (wallTag == "HingeWall")
@@ -309,20 +326,35 @@ public class Player : MonoBehaviour
                 else if (wallTag == "BrokenWall")
                 {
                     playerAttach.Detach_StaticWall();
-                    _explodable.explode();
+                    /*플레이어가 벽에서 나올 때 사용되는 폭파 코드
+                     * _explodable.explode();
                     _explodable = null;
                     ExplosionForce ef = GameManager.Instance.GetComponent<ExplosionForce>();
-                    ef.doExplosion(transform.position);
+                    ef.doExplosion(transform.position);*/
                 }
             }
 
-            playerAttach.Physics_Simulate(true);//플레이어 물리 작동
+            //playerAttach.Physics_Simulate(true);//플레이어 물리 작동
 
-            Sound_UseBoost();
+            Sound_UseBoost();//플레이어 사운드 작동
         }
     }
 
-    private void Control_Shoot()
+    private bool Control_ShootDelay()
+    {
+        bool temp = false;
+        if (bulletwaitTime < bulletDelay)
+        {
+            bulletwaitTime += Time.deltaTime;
+            temp = false;
+        }
+        else
+            temp = true;
+
+        return temp;
+    }
+
+    private void Control_Shoot()//플레이어 사격
     {
 
         if (Input.GetKey(shootKey) && !Input.GetKey(boostKey) && isShoot == true && isWall == true)
@@ -375,6 +407,23 @@ public class Player : MonoBehaviour
         {
             Bullet[i].Bullet_Refrash();
         }
+    }
+
+    private void Control_Camera_LookFar()//카메라 멀리 보기 코드
+    {
+        //카메라 멀리 보기 코드 다른 곳으로 뺄 예정
+        if (Input.GetMouseButton(1))
+        {
+            isOutOfCamera = true;
+            CameraManager.Instance.Player_CameraMousePos(this.transform.position);
+        }
+        else
+        {
+            isOutOfCamera = false;
+            CameraManager.Instance.Player_CameraPos(this.transform.position);
+            CameraManager.Instance.Set_Player_LocalPos(this.transform.localPosition);
+        }
+        //카메라 멀리 보기 코드
     }
 
     private Vector2 Control_LootAtMouse()//플레이어 마우스 이동
@@ -445,7 +494,7 @@ public class Player : MonoBehaviour
         laserAria.transform.localScale = playerLaser.Shoot_Laser();
     }
 
-    private void Control_Aria_Laser_Active(bool active)
+    private void Control_Aria_Laser_Active(bool active)//플레이어 이동 시 사격 레이저 활성/비활성
     {
         playerLaser.Shoot_Laser_Active(active);
     }
@@ -453,6 +502,11 @@ public class Player : MonoBehaviour
     private void Control_Move_SlowDown(float time) //시간 느려지게하기
     {
         GameManager.Instance.Player_Move_Slowdown(time);
+    }
+
+    private void Control_Move_TouchWallTime(bool active)
+    {
+
     }
     #endregion 플레이어 조작
 
@@ -487,15 +541,25 @@ public class Player : MonoBehaviour
     #endregion 플레이어 애니메이션
 
     #region 플레이어 물리
+
     private void OnCollisionEnter2D(Collision2D collision)
     {
         Control_Aria_Active(true);
         isMove = true;
         isWall = true;
         wallTag = collision.gameObject.tag;
-        if(wallTag != "Untagged")
-            this.transform.parent = collision.transform;
 
+        if (lastwallname == collision.transform.name)
+        {
+            lastwallname = null;
+            return;
+        }
+
+        if (wallTag != "Untagged")
+        {
+            this.transform.parent = collision.transform;
+            lastwallname = collision.transform.name;
+        }
 
         //GameManager.Instance.Camera_Shake();
 
@@ -516,9 +580,9 @@ public class Player : MonoBehaviour
                     Setting_FailGoal();
                 break;
             case "BrokenWall":
-                this.transform.parent = collision.transform.parent;
+                //this.transform.parent = collision.transform.parent;
                 playerAttach.Attach_BrokenWall(collision.transform);
-                _explodable = collision.transform.GetComponent<Explodable>();
+                //_explodable = collision.transform.GetComponent<Explodable>();
                 GameManager.Instance.Player_GameEnd();
                 break;
             case "FlowWall":
@@ -544,6 +608,8 @@ public class Player : MonoBehaviour
 
     internal void TriggerEnter2D(string tagname)
     {
+        Debug.Log("트리거하고 부딪혔는가 : " + tagname);
+
         switch (tagname)
         {
             case "boost":
